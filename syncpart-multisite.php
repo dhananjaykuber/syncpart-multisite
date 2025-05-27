@@ -18,6 +18,12 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit; // Exit if accessed directly.
 }
 
+/**
+ * Sync patterns across multisite installations.
+ *
+ * @param int    $post_id The ID of the post being published.
+ * @param object $post    The post object being published.
+ */
 function syncpart_multisite_sync_patterns( $post_id, $post ) {
 
 	// Get the sync status of the pattern.
