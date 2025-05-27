@@ -23,6 +23,8 @@ if ( ! defined( 'ABSPATH' ) ) {
  *
  * @param int    $post_id The ID of the post being published.
  * @param object $post    The post object being published.
+ *
+ * @return void
  */
 function syncpart_multisite_sync_patterns( $post_id, $post ) {
 
@@ -83,9 +85,81 @@ function syncpart_multisite_sync_patterns( $post_id, $post ) {
 
 			restore_current_blog();
 		}
-
-		add_action( 'publish_wp_block', __FUNCTION__, 30, 2 );
 	}
+
+	add_action( 'publish_wp_block', __FUNCTION__, 30, 2 );
 }
 
 add_action( 'publish_wp_block', 'syncpart_multisite_sync_patterns', 30, 2 );
+
+/**
+ * Sync template parts across multisite installations.
+ *
+ * @param int    $post_id The ID of the post being published.
+ * @param object $post    The post object being published.
+ *
+ * @return void
+ */
+function syncpart_multisite_sync_template_part( $post_id, $post ) {
+
+	// Get current theme slug.
+	$current_theme_slug = get_template();
+
+	// Get all the sites in the multisite network, excluding the current site.
+	$site_ids = get_sites(
+		array(
+			'fields'       => 'ids',
+			'site__not_in' => get_current_blog_id(),
+			'deleted'      => 0,
+		)
+	);
+
+	// Remove the action to prevent infinite loop.
+	remove_action( 'publish_wp_template_part', __FUNCTION__, 30, 2 );
+
+	if ( ! empty( $site_ids ) && is_array( $site_ids ) ) {
+
+		foreach ( $site_ids as $site_id ) {
+
+			// Switch to the site.
+			switch_to_blog( $site_id );
+
+			// Get current blog's theme slug.
+			$current_blog_theme_slug = get_template();
+
+			$existing_template_part = get_block_template( $current_theme_slug . '//' . $post->post_name, 'wp_template_part' );
+
+			if ( $existing_template_part ) {
+				// If the template part exists, update it.
+				$template_part_id = wp_update_post(
+					array(
+						'ID'           => $existing_template_part->id,
+						'post_content' => $post->post_content,
+					)
+				);
+			} else {
+				// If the template part does not exist, create a new one.
+				$template_part_id = wp_insert_post(
+					array(
+						'post_title'     => $post->post_title,
+						'post_content'   => $post->post_content,
+						'post_type'      => 'wp_template_part',
+						'post_status'    => 'publish',
+						'comment_status' => 'closed',
+						'ping_status'    => 'closed',
+					)
+				);
+			}
+
+			// Associate the template part with the current theme using the 'wp_theme' taxonomy.
+			// This ensures the template part appears only for the correct theme on the subsite.
+			wp_set_object_terms( $template_part_id, $current_blog_theme_slug, 'wp_theme' );
+
+			restore_current_blog();
+		}
+	}
+
+	add_action( 'publish_wp_template_part', __FUNCTION__, 30, 2 );
+}
+
+add_action( 'publish_wp_template_part', 'syncpart_multisite_sync_template_part', 30, 2 );
